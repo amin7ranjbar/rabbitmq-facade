@@ -1,0 +1,7 @@
+version: '3'
+services:
+    rabbitmq:
+        restart: always
+        image: rabbitmq:3-management
+        container_name: rabbitmq
+        network_mode: host
