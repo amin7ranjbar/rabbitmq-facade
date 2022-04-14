@@ -1,56 +1,51 @@
-#!/usr/bin/env node
+var amqp = require("amqplib");
+var basename = require("path").basename;
+var Promise = require("bluebird");
+var uuid = require("node-uuid");
 
-var amqp = require('amqplib/callback_api');
-
-var args = process.argv.slice(2);
-
-if (args.length === 0) {
-    console.log("Usage: rpc_client.js num");
-    process.exit(1);
+try {
+  if (process.argv.length < 3) throw Error("Too few args");
+  let n = parseInt(process.argv[2]);
+  sendMessage(n);
+} catch (e) {
+  console.error(e);
+  console.warn("Usage: %s number", basename(process.argv[1]));
+  process.exit(1);
 }
 
-amqp.connect('amqp://localhost', function(error0, connection) {
-    if (error0) {
-        throw error0;
-    }
-    connection.createChannel(function(error1, channel) {
-        if (error1) {
-            throw error1;
-        }
-        channel.assertQueue('', {
-            exclusive: true
-        }, function(error2, q) {
-            if (error2) {
-                throw error2;
+async function sendMessage(number, queue = "rpc_queue") {
+  try {
+    const connection = await amqp.connect("amqp://localhost");
+    try {
+      const channel = await connection.createChannel();
+      const fibN = await new Promise(async (resolve, reject) => {
+        try {
+          const corrId = uuid();
+          function maybeAnswer(msg) {
+            if (msg.properties.correlationId === corrId) {
+              resolve(msg.content.toString());
             }
-            var correlationId = generateUuid();
-            var num = parseInt(args[0]);
+          }
 
-            console.log(' [x] Requesting fib(%d)', num);
+          const qok = await channel.assertQueue("", { exclusive: true });
 
-            channel.consume(q.queue, function(msg) {
-                if (msg.properties.correlationId === correlationId) {
-                    console.log(' [.] Got %s', msg.content.toString());
-                    setTimeout(function() {
-                        connection.close();
-                        process.exit(0);
-                    }, 500);
-                }
-            }, {
-                noAck: true
-            });
+          await channel.consume(qok.queue, maybeAnswer, { noAck: true });
 
-            channel.sendToQueue('rpc_queue',
-                Buffer.from(num.toString()), {
-                    correlationId: correlationId,
-                    replyTo: q.queue
-                });
-        });
-    });
-});
-
-function generateUuid() {
-    return Math.random().toString() +
-        Math.random().toString() +
-        Math.random().toString();
+          console.log(" [x] Requesting fib(%d)", number);
+          channel.sendToQueue(queue, Buffer.from(number.toString()), {
+            correlationId: corrId,
+            replyTo: qok.queue,
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+      console.log(" [.] Got %d", fibN);
+      return fibN;
+    } finally {
+      connection.close();
+    }
+  } catch (error) {
+    console.warn(error);
+  }
 }

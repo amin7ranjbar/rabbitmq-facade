@@ -4,7 +4,7 @@ implementing facade design pattern using rabbitmq rpc in nodejs
 
 # instructions
 
-`npm i amqplib`
+`npm i`
 
 `docker-compose up -d`
 
